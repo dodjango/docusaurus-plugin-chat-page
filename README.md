@@ -12,6 +12,8 @@ A Docusaurus plugin that adds an AI-powered chat interface to your documentation
 - 💅 Beautiful UI that matches your Docusaurus theme
 - ⚡ Real-time streaming responses
 - 📱 Responsive design
+- ☁️ Azure OpenAI and custom endpoint support
+- 🔧 Configurable embedding and chat models
 
 ## How It Works
 
@@ -79,6 +81,55 @@ module.exports = {
   },
 }
 ```
+
+### Custom Models
+
+You can specify custom embedding and chat models:
+
+```js
+module.exports = {
+  // ...
+  plugins: [
+    [
+      "docusaurus-plugin-chat-page",
+      {
+        path: "chat",
+        openai: {
+          apiKey: process.env.OPENAI_API_KEY,
+          embeddingModel: "text-embedding-3-large", // default: text-embedding-3-small
+          chatModel: "gpt-4o", // default: gpt-4o-mini
+        },
+      },
+    ],
+  ],
+}
+```
+
+### Azure OpenAI
+
+To use Azure OpenAI (or any OpenAI-compatible API), provide a custom `baseURL`:
+
+```js
+module.exports = {
+  // ...
+  plugins: [
+    [
+      "docusaurus-plugin-chat-page",
+      {
+        path: "chat",
+        openai: {
+          apiKey: process.env.AZURE_OPENAI_API_KEY,
+          baseURL: "https://your-resource.openai.azure.com/openai/v1/",
+          embeddingModel: "your-embedding-deployment-name",
+          chatModel: "your-chat-deployment-name",
+        },
+      },
+    ],
+  ],
+}
+```
+
+**Note:** For Azure OpenAI, the `embeddingModel` and `chatModel` should match your deployment names in Azure AI Foundry.
 
 ## Development Mode
 

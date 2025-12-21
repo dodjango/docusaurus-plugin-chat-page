@@ -49,6 +49,12 @@ export interface ChatPluginContent {
 
 export interface OpenAIConfig {
   apiKey: string
+  /** Custom base URL for Azure OpenAI or other OpenAI-compatible APIs */
+  baseURL?: string
+  /** Embedding model to use (default: text-embedding-3-small) */
+  embeddingModel?: string
+  /** Chat model to use (default: gpt-4o-mini) */
+  chatModel?: string
 }
 
 export interface DevelopmentConfig {
