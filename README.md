@@ -8,6 +8,7 @@ A Docusaurus plugin that adds an AI-powered chat interface to your documentation
 - 🔍 Semantic search using embeddings
 - 💨 Fast client-side similarity search
 - 🏗️ Build-time content processing
+- 💾 Embedding cache for fast rebuilds (no API costs)
 - 🔒 Secure (API keys only used at build time)
 - 💅 Beautiful UI that matches your Docusaurus theme
 - ⚡ Real-time streaming responses
@@ -124,6 +125,42 @@ When `mockData: true` is set:
 - A warning banner appears in the UI when mock data is enabled
 - Console warnings will indicate when mock services are being used
 - Production builds with `mockData: true` will show a warning
+
+## Embedding Cache
+
+The plugin automatically caches generated embeddings to avoid regenerating them on every build. This saves API costs and significantly speeds up subsequent builds.
+
+### How It Works
+
+1. **First build**: Generates embeddings via OpenAI API and saves them to `.embeddings-cache.json`
+2. **Subsequent builds**: Loads embeddings from cache (instant, no API calls)
+3. **Content changes**: Cache is automatically invalidated when documentation content changes
+4. **Model changes**: Cache is invalidated if you change the embedding model
+
+### Cache Behavior
+
+| Scenario | Behavior |
+|----------|----------|
+| First build | Generates embeddings, creates cache |
+| No content changes | Uses cache (fast, free) |
+| Documentation changed | Regenerates embeddings |
+| Different embedding model | Regenerates embeddings |
+| `mockData: true` | No cache (mock embeddings) |
+
+### Cache File
+
+The cache is stored in `.embeddings-cache.json` in your project root. You should:
+
+- **Add to `.gitignore`**: The cache file can be large and is machine-specific
+- **Delete to force regeneration**: Remove the file to regenerate all embeddings
+
+```bash
+# Add to .gitignore
+echo ".embeddings-cache.json" >> .gitignore
+
+# Force regeneration
+rm .embeddings-cache.json
+```
 
 ## Environment Variables
 

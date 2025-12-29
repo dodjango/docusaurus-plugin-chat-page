@@ -1,17 +1,32 @@
 import { LoadContext } from "@docusaurus/types"
 import * as fs from "fs/promises"
 import * as path from "path"
+import * as crypto from "crypto"
 import type {
   FileNode,
   ChatPluginContent,
   OpenAIConfig,
   DevelopmentConfig,
+  DocumentChunkWithEmbedding,
 } from "./types"
 import { glob } from "glob"
 import matter from "gray-matter"
 import OpenAI from "openai"
 import process from "process"
 import { createAIService } from "./services/ai"
+
+// Cache file for persisted embeddings
+const CACHE_FILE = ".embeddings-cache.json"
+
+interface EmbeddingCache {
+  contentHash: string
+  embeddingModel: string
+  chunks: DocumentChunkWithEmbedding[]
+  metadata: {
+    totalChunks: number
+    lastUpdated: string
+  }
+}
 
 /**
  * Convert a flat list of file paths into a tree structure
@@ -306,7 +321,78 @@ async function generateEmbeddings(
 }
 
 /**
+ * Compute a hash of all content files for cache validation
+ */
+async function computeContentHash(dirs: string[]): Promise<string> {
+  const hash = crypto.createHash("sha256")
+
+  for (const dir of dirs) {
+    try {
+      const files = glob.sync("**/*.{md,mdx}", { cwd: dir, absolute: true })
+      files.sort() // Ensure consistent ordering
+
+      for (const file of files) {
+        const content = await fs.readFile(file, "utf-8")
+        hash.update(file)
+        hash.update(content)
+      }
+    } catch {
+      // Directory might not exist
+    }
+  }
+
+  return hash.digest("hex")
+}
+
+/**
+ * Load cached embeddings if valid
+ */
+async function loadCache(
+  cacheFile: string,
+  contentHash: string,
+  embeddingModel: string
+): Promise<EmbeddingCache | null> {
+  try {
+    const cacheContent = await fs.readFile(cacheFile, "utf-8")
+    const cache: EmbeddingCache = JSON.parse(cacheContent)
+
+    // Validate cache
+    if (cache.contentHash === contentHash && cache.embeddingModel === embeddingModel) {
+      return cache
+    }
+
+    console.log("Cache invalidated: content or model changed")
+    return null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Save embeddings to cache
+ */
+async function saveCache(
+  cacheFile: string,
+  contentHash: string,
+  embeddingModel: string,
+  chunks: DocumentChunkWithEmbedding[]
+): Promise<void> {
+  const cache: EmbeddingCache = {
+    contentHash,
+    embeddingModel,
+    chunks,
+    metadata: {
+      totalChunks: chunks.length,
+      lastUpdated: new Date().toISOString(),
+    },
+  }
+
+  await fs.writeFile(cacheFile, JSON.stringify(cache), "utf-8")
+}
+
+/**
  * Load all content and prepare for embedding generation
+ * Uses caching to avoid regenerating embeddings when content hasn't changed
  */
 export async function loadContent(
   context: LoadContext & {
@@ -318,6 +404,8 @@ export async function loadContent(
 ): Promise<ChatPluginContent> {
   const { siteDir, options } = context
   const useMockData = options?.development?.mockData === true
+  const embeddingModel = options?.openai?.embeddingModel || "text-embedding-3-small"
+  const cacheFile = path.join(siteDir, CACHE_FILE)
 
   if (!useMockData && !options?.openai?.apiKey) {
     throw new Error("OpenAI API key is required when not using mock data")
@@ -336,6 +424,28 @@ export async function loadContent(
 
   const docsDir = path.join(siteDir, "docs")
   const pagesDir = path.join(siteDir, "src/pages")
+  const contentDirs = [docsDir, pagesDir]
+
+  // Check cache (only for real embeddings, not mock data)
+  if (!useMockData) {
+    console.log("Computing content hash for cache validation...")
+    const contentHash = await computeContentHash(contentDirs)
+
+    const cache = await loadCache(cacheFile, contentHash, embeddingModel)
+    if (cache) {
+      console.log(
+        "\n\x1b[42m\x1b[30m CACHE HIT \x1b[0m Using cached embeddings!"
+      )
+      console.log(
+        `📦 ${cache.chunks.length} cached embeddings | Last updated: ${cache.metadata.lastUpdated}`
+      )
+      return {
+        chunks: cache.chunks,
+        metadata: cache.metadata,
+      }
+    }
+    console.log("Cache miss - generating new embeddings...")
+  }
 
   // Get the tree structures
   const [docsTree, pagesTree] = await Promise.all([
@@ -411,6 +521,13 @@ export async function loadContent(
     useMockData,
     10
   )
+
+  // Save to cache (only for real embeddings)
+  if (!useMockData) {
+    const contentHash = await computeContentHash(contentDirs)
+    await saveCache(cacheFile, contentHash, embeddingModel, chunksWithEmbeddings)
+    console.log(`\n\x1b[32m✓\x1b[0m Embeddings cached to ${CACHE_FILE}`)
+  }
 
   if (useMockData) {
     console.log(
